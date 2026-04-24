@@ -1,0 +1,85 @@
+{
+  "name": "volary",
+  "displayName": "Volary",
+  "description": "Injects Volary memory into GitHub Copilot sessions via agent hooks.",
+  "version": "0.0.1",
+  "publisher": "volary-ai",
+  "engines": {
+    "vscode": "^1.102.0"
+  },
+  "categories": ["Other"],
+  "keywords": [
+    "copilot",
+    "github copilot",
+    "mcp",
+    "memory",
+    "volary",
+    "ai",
+    "agent"
+  ],
+  "icon": "images/icon.png",
+  "galleryBanner": {
+    "color": "#1D5019",
+    "theme": "dark"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/volary-ai/copilot-vscode-extension.git"
+  },
+  "bugs": {
+    "url": "https://github.com/volary-ai/copilot-vscode-extension/issues"
+  },
+  "homepage": "https://github.com/volary-ai/copilot-vscode-extension#readme",
+  "activationEvents": ["onStartupFinished"],
+  "main": "./out/extension.js",
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true
+    },
+    "virtualWorkspaces": true
+  },
+  "contributes": {
+    "mcpServerDefinitionProviders": [
+      {
+        "id": "volary",
+        "label": "Volary"
+      }
+    ],
+    "commands": [
+      {
+        "command": "volary.connect",
+        "title": "Volary: Connect (set agent URL and token)"
+      },
+      {
+        "command": "volary.setToken",
+        "title": "Volary: Set Agent Token"
+      },
+      {
+        "command": "volary.setAgentUrl",
+        "title": "Volary: Set Agent URL"
+      },
+      {
+        "command": "volary.installHook",
+        "title": "Volary: Reinstall Copilot Hook"
+      },
+      {
+        "command": "volary.uninstallHook",
+        "title": "Volary: Disconnect / Uninstall Hook"
+      },
+      {
+        "command": "volary.showLogs",
+        "title": "Volary: Show Logs"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "package": "npx --yes @vscode/vsce package --out volary.vsix"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.102.0",
+    "typescript": "^5.4.0"
+  }
+}

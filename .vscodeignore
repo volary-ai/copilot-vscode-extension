@@ -1,0 +1,10 @@
+**
+!out/**
+!images/**
+!package.json
+!README.md
+!LICENSE
+src/**
+tsconfig.json
+node_modules/**
+.vscode/**
