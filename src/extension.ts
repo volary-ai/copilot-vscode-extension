@@ -17,43 +17,15 @@ function pluginDir(context: vscode.ExtensionContext): string {
   return path.join(context.globalStorageUri.fsPath, "volary");
 }
 
-function scriptsDir(context: vscode.ExtensionContext): string {
-  return path.join(pluginDir(context), "scripts");
-}
-
 const BASH_SESSION_START = `curl -sfS --max-time 20 -H "Authorization: Bearer $VOLARY_TOKEN" -H 'Content-Type: application/json' --data-binary @- "$VOLARY_AGENT_URL/copilot/session-start"`;
 
 const PS_SESSION_START = `curl.exe -sfS --max-time 20 -H "Authorization: Bearer $env:VOLARY_TOKEN" -H 'Content-Type: application/json' --data-binary '@-' "$env:VOLARY_AGENT_URL/copilot/session-start"`;
 
-const STOP_SCRIPT_BASH_BODY = `#!/bin/sh
-set -u
-EVT=$(cat)
-TP=$(printf '%s' "$EVT" | sed -n 's/.*"transcript_path"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p')
-if [ -n "$TP" ] && [ -f "$TP" ]; then
-  curl -sfS --max-time 30 \\
-    -H "Authorization: Bearer $VOLARY_TOKEN" \\
-    -H "Content-Type: application/json" \\
-    --data-binary @"$TP" \\
-    "$VOLARY_AGENT_URL/copilot/stop" >/dev/null 2>&1 || true
-fi
-printf '{"continue":true}'
-`;
+// Extracts transcript_path from the stdin event and POSTs the transcript file
+// as the request body. The server returns the hook response JSON on stdout.
+const BASH_STOP = `TP=$(sed -n 's/.*"transcript_path"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p'); [ -n "$TP" ] && [ -f "$TP" ] && curl -sfS --max-time 30 -H "Authorization: Bearer $VOLARY_TOKEN" -H "Content-Type: application/json" --data-binary @"$TP" "$VOLARY_AGENT_URL/copilot/stop" || true`;
 
-const STOP_SCRIPT_PS_BODY = `$ErrorActionPreference = 'SilentlyContinue'
-$evt = [Console]::In.ReadToEnd()
-$tp = ''
-if ($evt -match '"transcript_path"\\s*:\\s*"([^"]+)"') { $tp = $matches[1] }
-try {
-  if ($tp -and (Test-Path -LiteralPath $tp)) {
-    curl.exe -sfS --max-time 30 \`
-      -H "Authorization: Bearer $env:VOLARY_TOKEN" \`
-      -H "Content-Type: application/json" \`
-      --data-binary "@$tp" \`
-      "$env:VOLARY_AGENT_URL/copilot/stop" | Out-Null
-  }
-} catch {}
-Write-Output '{"continue":true}'
-`;
+const PS_STOP = `$ErrorActionPreference='SilentlyContinue'; $evt=[Console]::In.ReadToEnd(); if ($evt -match '"transcript_path"\\s*:\\s*"([^"]+)"') { $tp=$matches[1]; if ($tp -and (Test-Path -LiteralPath $tp)) { curl.exe -sfS --max-time 30 -H "Authorization: Bearer $env:VOLARY_TOKEN" -H "Content-Type: application/json" --data-binary "@$tp" "$env:VOLARY_AGENT_URL/copilot/stop" } }`;
 
 function buildPluginManifest(version: string): object {
   return {
@@ -84,8 +56,8 @@ function buildHooksConfig(token: string, agentUrl: string): object {
           type: "command",
           timeout: 30,
           env,
-          bash: `sh "\${CLAUDE_PLUGIN_ROOT}/scripts/copilot-stop.sh"`,
-          powershell: `powershell -NoProfile -ExecutionPolicy Bypass -File "\${CLAUDE_PLUGIN_ROOT}/scripts/copilot-stop.ps1"`,
+          bash: BASH_STOP,
+          powershell: PS_STOP,
         },
       ],
     },
@@ -119,8 +91,9 @@ async function writePlugin(context: vscode.ExtensionContext): Promise<boolean> {
   }
 
   const dir = pluginDir(context);
-  const scripts = scriptsDir(context);
-  fs.mkdirSync(scripts, { recursive: true });
+  fs.mkdirSync(dir, { recursive: true });
+  // Clean up the scripts/ subdir left behind by the previous (file-based) layout.
+  rmRecursive(path.join(dir, "scripts"));
 
   const version = context.extension.packageJSON.version as string;
   writeFileSecure(
@@ -135,14 +108,6 @@ async function writePlugin(context: vscode.ExtensionContext): Promise<boolean> {
     path.join(dir, ".mcp.json"),
     JSON.stringify(buildMcpConfig(token, agentUrl), null, 2) + "\n",
   );
-
-  const stopBash = path.join(scripts, "copilot-stop.sh");
-  const stopPs = path.join(scripts, "copilot-stop.ps1");
-  fs.writeFileSync(stopBash, STOP_SCRIPT_BASH_BODY);
-  fs.writeFileSync(stopPs, STOP_SCRIPT_PS_BODY);
-  if (process.platform !== "win32") {
-    fs.chmodSync(stopBash, 0o755);
-  }
 
   log(`wrote plugin → ${dir} (agent ${agentUrl})`);
   return true;
