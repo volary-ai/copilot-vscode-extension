@@ -6,29 +6,21 @@ when the session ends.
 
 ## What it does
 
-On activation, once you've provided an agent URL and token, the extension:
+On activation, once you've provided an agent URL and token, the extension will 
+configure hooks and mcp tooling to integrate volary's memory layer into your 
+coding agent. 
 
-1. Renders a Copilot agent plugin into VS Code's per-extension storage at
-   `<globalStorage>/volary/` containing:
-   - `plugin.json` — the manifest
-   - `hooks.json` — `SessionStart` (memory injection) and `Stop` (transcript
-     upload) hooks
-   - `.mcp.json` — the Volary HTTP MCP server with your auth header
-   - `scripts/copilot-stop.*` — helpers invoked by the Stop hook
-2. Registers that directory in the user-level `chat.pluginLocations` setting
-   so Copilot discovers it. The plugin then shows up in the Extensions view
-   under the `@agentPlugins` filter, and under Chat → Plugins.
+You agent can recall past experience, learn from mistakes, and react to your
+feedback. Transcripts will be collected to capture latent feedback and 
+pertinent context that can be recalled later. 
 
-Credentials are stored in VS Code's `SecretStorage` (token) and `globalState`
-(agent URL). They can also be seeded from the `VOLARY_TOKEN` and
-`VOLARY_AGENT_URL` environment variables on first launch.
 
 ## Getting started
 
 1. Install the extension.
-2. Run **Volary: Connect** from the command palette and paste your agent URL
-   (e.g. `https://api.volary.ai/v0/orgs/<org>/agents/<agent>`) and token from
-   [app.volary.ai](https://app.volary.ai).
+2. Run **Volary: Connect** from the command palette (Ctr-Shift-P) and paste your 
+   agent URL (e.g. `https://api.volary.ai/v0/orgs/<org>/agents/<agent>`) and token 
+   from [volary.ai](https://volary.ai).
 3. Start a Copilot agent session — memory, MCP tools, and transcript upload
    are wired up automatically. If it doesn't pick up immediately, reload the
    window.
@@ -46,7 +38,4 @@ Credentials are stored in VS Code's `SecretStorage` (token) and `globalState`
 
 ## Copilot CLI
 
-This extension manages the VS Code side. The plugin directory it renders
-(`<globalStorage>/volary/`) is a stand-alone Copilot agent plugin — the same
-shape you can ship to CLI users. Point the CLI at the rendered directory (or
-clone it) once CLI plugin support is available.
+This extension manages the VS Code side. CLI integration is coming soon. 
