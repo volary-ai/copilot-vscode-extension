@@ -69,7 +69,8 @@
   },
   "scripts": {
     "compile": "tsc -p ./",
-    "package": "npx --yes @vscode/vsce package --out volary.vsix",
+    "sync-version": "node -e \"const fs=require('fs');const v=fs.readFileSync('VERSION','utf8').trim();const p=JSON.parse(fs.readFileSync('package.json'));if(p.version!==v){p.version=v;fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\\n');console.log('synced package.json version → '+v)}else{console.log('package.json already at '+v)}\"",
+    "package": "npm run sync-version && npx --yes @vscode/vsce package --out volary.vsix",
     "login": "npx --yes @vscode/vsce login Volary"
   },
   "devDependencies": {

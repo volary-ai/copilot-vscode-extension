@@ -2,41 +2,54 @@ name: Release
 
 on:
   push:
-    tags:
-      - "v*.*.*"
+    branches: [main]
+    paths: ["VERSION"]
   workflow_dispatch:
 
 jobs:
-  publish:
+  release:
     runs-on: ubuntu-latest
     permissions:
       contents: write
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: "npm"
 
-      - run: npm ci
-
-      - name: Verify tag matches package.json version
-        if: github.event_name == 'push'
+      - name: Read VERSION
+        id: ver
         run: |
-          TAG_VERSION="${GITHUB_REF_NAME#v}"
-          PKG_VERSION=$(node -p "require('./package.json').version")
-          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
-            echo "::error::Tag $TAG_VERSION does not match package.json version $PKG_VERSION"
+          v=$(tr -d '[:space:]' < VERSION)
+          if [ -z "$v" ]; then
+            echo "::error::VERSION is empty"
             exit 1
           fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "tag=v$v" >> "$GITHUB_OUTPUT"
+
+      - name: Fail if tag already exists
+        run: |
+          if git rev-parse "${{ steps.ver.outputs.tag }}" >/dev/null 2>&1; then
+            echo "::error::Tag ${{ steps.ver.outputs.tag }} already exists — bump VERSION to release"
+            exit 1
+          fi
+
+      - run: npm ci
+
+      - name: Sync package.json to VERSION
+        run: npm run sync-version
 
       - name: Type-check
         run: npm run compile
 
       - name: Package vsix
-        run: npm run package
+        run: npx --yes @vscode/vsce package --out volary.vsix
 
       - name: Publish to VS Code Marketplace
         env:
@@ -49,9 +62,16 @@ jobs:
       #     OVSX_PAT: ${{ secrets.OVSX_PAT }}
       #   run: npx --yes ovsx publish volary.vsix --pat "$OVSX_PAT"
 
-      - name: Attach vsix to GitHub Release
-        if: github.event_name == 'push'
+      - name: Create tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "${{ steps.ver.outputs.tag }}"
+          git push origin "${{ steps.ver.outputs.tag }}"
+
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.ver.outputs.tag }}
           files: volary.vsix
           generate_release_notes: true
