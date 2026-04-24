@@ -3,13 +3,8 @@ import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
 
-const HOOK_FILE_NAME = "volary.json";
 const TOKEN_KEY = "volary.token";
 const AGENT_URL_KEY = "volary.agentUrl";
-
-const SCRIPTS_DIR = path.join(os.homedir(), ".volary", "scripts");
-const STOP_SCRIPT_BASH = path.join(SCRIPTS_DIR, "copilot-stop.sh");
-const STOP_SCRIPT_PS = path.join(SCRIPTS_DIR, "copilot-stop.ps1");
 
 let output: vscode.OutputChannel;
 
@@ -18,17 +13,18 @@ function log(msg: string): void {
   output?.appendLine(`[${stamp}] ${msg}`);
 }
 
-function hookConfigPath(): string {
-  return path.join(os.homedir(), ".copilot", "hooks", HOOK_FILE_NAME);
+function pluginDir(context: vscode.ExtensionContext): string {
+  return path.join(context.globalStorageUri.fsPath, "volary");
+}
+
+function scriptsDir(context: vscode.ExtensionContext): string {
+  return path.join(pluginDir(context), "scripts");
 }
 
 const BASH_SESSION_START = `curl -sfS --max-time 20 -H "Authorization: Bearer $VOLARY_TOKEN" -H 'Content-Type: application/json' --data-binary @- "$VOLARY_AGENT_URL/copilot/session-start"`;
 
 const PS_SESSION_START = `curl.exe -sfS --max-time 20 -H "Authorization: Bearer $env:VOLARY_TOKEN" -H 'Content-Type: application/json' --data-binary '@-' "$env:VOLARY_AGENT_URL/copilot/session-start"`;
 
-// Bash helper for Stop: reads the stdin event, pulls transcript_path out with
-// sed, and POSTs the transcript file as the raw request body. If no transcript
-// is available (e.g. "No workspace storage" case) the upload is skipped.
 const STOP_SCRIPT_BASH_BODY = `#!/bin/sh
 set -u
 EVT=$(cat)
@@ -59,16 +55,18 @@ try {
 Write-Output '{"continue":true}'
 `;
 
-function writeStopScripts(): void {
-  fs.mkdirSync(SCRIPTS_DIR, { recursive: true });
-  fs.writeFileSync(STOP_SCRIPT_BASH, STOP_SCRIPT_BASH_BODY);
-  fs.writeFileSync(STOP_SCRIPT_PS, STOP_SCRIPT_PS_BODY);
-  if (process.platform !== "win32") {
-    fs.chmodSync(STOP_SCRIPT_BASH, 0o755);
-  }
+function buildPluginManifest(version: string): object {
+  return {
+    name: "volary",
+    description: "Volary memory + MCP tools for GitHub Copilot",
+    version,
+    author: { name: "Volary AI", url: "https://volary.ai" },
+    hooks: "hooks.json",
+    mcpServers: ".mcp.json",
+  };
 }
 
-function buildHookConfig(token: string, agentUrl: string): object {
+function buildHooksConfig(token: string, agentUrl: string): object {
   const env = { VOLARY_TOKEN: token, VOLARY_AGENT_URL: agentUrl };
   return {
     hooks: {
@@ -86,43 +84,135 @@ function buildHookConfig(token: string, agentUrl: string): object {
           type: "command",
           timeout: 30,
           env,
-          bash: `sh "${STOP_SCRIPT_BASH}"`,
-          powershell: `powershell -NoProfile -ExecutionPolicy Bypass -File "${STOP_SCRIPT_PS}"`,
+          bash: `sh "\${CLAUDE_PLUGIN_ROOT}/scripts/copilot-stop.sh"`,
+          powershell: `powershell -NoProfile -ExecutionPolicy Bypass -File "\${CLAUDE_PLUGIN_ROOT}/scripts/copilot-stop.ps1"`,
         },
       ],
     },
   };
 }
 
-async function writeConfigs(context: vscode.ExtensionContext): Promise<boolean> {
+function buildMcpConfig(token: string, agentUrl: string): object {
+  return {
+    mcpServers: {
+      volary: {
+        url: `${agentUrl}/v0/mcp`,
+        headers: { Authorization: `Bearer ${token}` },
+      },
+    },
+  };
+}
+
+function writeFileSecure(p: string, contents: string): void {
+  fs.writeFileSync(p, contents);
+  if (process.platform !== "win32") {
+    fs.chmodSync(p, 0o600);
+  }
+}
+
+async function writePlugin(context: vscode.ExtensionContext): Promise<boolean> {
   const token = await context.secrets.get(TOKEN_KEY);
   const agentUrl = context.globalState.get<string>(AGENT_URL_KEY);
   if (!token || !agentUrl) {
-    log(`skipped writing hook config: ${!token ? "no token" : "no agent URL"}`);
+    log(`skipped writing plugin: ${!token ? "no token" : "no agent URL"}`);
     return false;
   }
 
-  writeStopScripts();
+  const dir = pluginDir(context);
+  const scripts = scriptsDir(context);
+  fs.mkdirSync(scripts, { recursive: true });
 
-  const cfgPath = hookConfigPath();
-  fs.mkdirSync(path.dirname(cfgPath), { recursive: true });
-  fs.writeFileSync(cfgPath, JSON.stringify(buildHookConfig(token, agentUrl), null, 2) + "\n");
+  const version = context.extension.packageJSON.version as string;
+  writeFileSecure(
+    path.join(dir, "plugin.json"),
+    JSON.stringify(buildPluginManifest(version), null, 2) + "\n",
+  );
+  writeFileSecure(
+    path.join(dir, "hooks.json"),
+    JSON.stringify(buildHooksConfig(token, agentUrl), null, 2) + "\n",
+  );
+  writeFileSecure(
+    path.join(dir, ".mcp.json"),
+    JSON.stringify(buildMcpConfig(token, agentUrl), null, 2) + "\n",
+  );
 
+  const stopBash = path.join(scripts, "copilot-stop.sh");
+  const stopPs = path.join(scripts, "copilot-stop.ps1");
+  fs.writeFileSync(stopBash, STOP_SCRIPT_BASH_BODY);
+  fs.writeFileSync(stopPs, STOP_SCRIPT_PS_BODY);
   if (process.platform !== "win32") {
-    fs.chmodSync(cfgPath, 0o600);
+    fs.chmodSync(stopBash, 0o755);
   }
-  log(`wrote hook config → ${cfgPath} (agent ${agentUrl})`);
+
+  log(`wrote plugin → ${dir} (agent ${agentUrl})`);
   return true;
 }
 
-async function uninstall(context: vscode.ExtensionContext): Promise<void> {
-  for (const p of [hookConfigPath(), STOP_SCRIPT_BASH, STOP_SCRIPT_PS]) {
-    if (fs.existsSync(p)) fs.unlinkSync(p);
+async function registerPluginLocation(dir: string): Promise<void> {
+  const cfg = vscode.workspace.getConfiguration("chat");
+  const current = cfg.get<Record<string, boolean>>("pluginLocations") ?? {};
+  if (current[dir] === true) return;
+  const next = { ...current, [dir]: true };
+  await cfg.update("pluginLocations", next, vscode.ConfigurationTarget.Global);
+  log(`registered plugin location in chat.pluginLocations: ${dir}`);
+}
+
+async function unregisterPluginLocation(dir: string): Promise<void> {
+  const cfg = vscode.workspace.getConfiguration("chat");
+  const current = cfg.get<Record<string, boolean>>("pluginLocations") ?? {};
+  if (!(dir in current)) return;
+  const next = { ...current };
+  delete next[dir];
+  const value = Object.keys(next).length ? next : undefined;
+  await cfg.update("pluginLocations", value, vscode.ConfigurationTarget.Global);
+  log(`removed plugin location from chat.pluginLocations: ${dir}`);
+}
+
+function rmRecursive(p: string): void {
+  try {
+    fs.rmSync(p, { recursive: true, force: true });
+  } catch {
+    // best-effort cleanup
   }
+}
+
+async function uninstall(context: vscode.ExtensionContext): Promise<void> {
+  const dir = pluginDir(context);
+  await unregisterPluginLocation(dir);
+  rmRecursive(dir);
   await context.secrets.delete(TOKEN_KEY);
   await context.globalState.update(AGENT_URL_KEY, undefined);
-  log("uninstalled: removed hook config, scripts, and stored credentials");
+  log("uninstalled: removed plugin dir, chat.pluginLocations entry, and stored credentials");
   vscode.window.showInformationMessage("Volary disconnected.");
+}
+
+// One-time cleanup of files left behind by the pre-plugin hook-file design.
+function migrateLegacyFiles(): void {
+  const legacy = [
+    path.join(os.homedir(), ".copilot", "hooks", "volary.json"),
+    path.join(os.homedir(), ".volary", "scripts", "copilot-stop.sh"),
+    path.join(os.homedir(), ".volary", "scripts", "copilot-stop.ps1"),
+  ];
+  for (const p of legacy) {
+    if (fs.existsSync(p)) {
+      try {
+        fs.unlinkSync(p);
+        log(`migrated: removed legacy ${p}`);
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+  for (const d of [
+    path.join(os.homedir(), ".volary", "scripts"),
+    path.join(os.homedir(), ".volary"),
+  ]) {
+    try {
+      fs.rmdirSync(d);
+    } catch {
+      /* not empty or missing — fine */
+    }
+  }
 }
 
 async function promptForAgentUrl(context: vscode.ExtensionContext): Promise<string | undefined> {
@@ -159,14 +249,23 @@ async function promptForToken(context: vscode.ExtensionContext): Promise<string 
   return trimmed;
 }
 
+async function connect(context: vscode.ExtensionContext): Promise<boolean> {
+  const ok = await writePlugin(context);
+  if (!ok) return false;
+  await registerPluginLocation(pluginDir(context));
+  return true;
+}
+
 async function runConnectFlow(context: vscode.ExtensionContext): Promise<void> {
   const url = await promptForAgentUrl(context);
   if (!url) return;
   const token = await promptForToken(context);
   if (!token) return;
-  const ok = await writeConfigs(context);
+  const ok = await connect(context);
   if (ok) {
-    vscode.window.showInformationMessage("Volary connected. Copilot sessions will now include Volary memory + MCP tools.");
+    vscode.window.showInformationMessage(
+      "Volary connected. Reload the window if Copilot doesn't pick up the plugin immediately.",
+    );
   }
 }
 
@@ -202,107 +301,60 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push(output);
   log(`activating Volary v${context.extension.packageJSON.version} on ${process.platform}`);
 
+  migrateLegacyFiles();
+
   const seeded = await seedFromEnvIfPresent(context);
   if (seeded) log("seeded credentials from VOLARY_TOKEN / VOLARY_AGENT_URL env");
 
-  const mcpChange = new vscode.EventEmitter<void>();
-  registerMcpProvider(context, mcpChange);
-
   context.subscriptions.push(
-    mcpChange,
     vscode.commands.registerCommand("volary.connect", async () => {
       await runConnectFlow(context);
-      mcpChange.fire();
     }),
     vscode.commands.registerCommand("volary.setToken", async () => {
       const t = await promptForToken(context);
-      if (t) {
-        const ok = await writeConfigs(context);
-        mcpChange.fire();
-        if (ok) vscode.window.showInformationMessage("Volary token updated.");
-        else vscode.window.showWarningMessage("Token saved. Set the agent URL to finish connecting.");
-      }
+      if (!t) return;
+      const ok = await connect(context);
+      if (ok) vscode.window.showInformationMessage("Volary token updated.");
+      else vscode.window.showWarningMessage("Token saved. Set the agent URL to finish connecting.");
     }),
     vscode.commands.registerCommand("volary.setAgentUrl", async () => {
       const u = await promptForAgentUrl(context);
-      if (u) {
-        const ok = await writeConfigs(context);
-        mcpChange.fire();
-        if (ok) vscode.window.showInformationMessage("Volary agent URL updated.");
-        else vscode.window.showWarningMessage("Agent URL saved. Set the token to finish connecting.");
-      }
+      if (!u) return;
+      const ok = await connect(context);
+      if (ok) vscode.window.showInformationMessage("Volary agent URL updated.");
+      else vscode.window.showWarningMessage("Agent URL saved. Set the token to finish connecting.");
     }),
     vscode.commands.registerCommand("volary.installHook", async () => {
-      const ok = await writeConfigs(context);
-      mcpChange.fire();
+      const ok = await connect(context);
       if (!ok) {
         await runConnectFlow(context);
       } else {
-        vscode.window.showInformationMessage("Volary hooks + MCP reinstalled.");
+        vscode.window.showInformationMessage("Volary plugin reinstalled.");
       }
     }),
     vscode.commands.registerCommand("volary.uninstallHook", async () => {
       await uninstall(context);
-      mcpChange.fire();
     }),
     vscode.commands.registerCommand("volary.showLogs", () => {
       output.show(true);
     }),
     context.secrets.onDidChange(async (e) => {
       if (e.key === TOKEN_KEY) {
-        await writeConfigs(context);
-        mcpChange.fire();
+        await connect(context);
       }
     }),
   );
 
   try {
-    const wrote = await writeConfigs(context);
-    if (!wrote) {
+    const ok = await connect(context);
+    if (!ok) {
       await showConnectBalloonIfNeeded(context);
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     log(`ERROR during install: ${msg}`);
-    vscode.window.showErrorMessage(`Volary: failed to install config: ${msg}`);
+    vscode.window.showErrorMessage(`Volary: failed to install plugin: ${msg}`);
   }
-}
-
-function registerMcpProvider(context: vscode.ExtensionContext, change: vscode.EventEmitter<void>): void {
-  // `vscode.lm.registerMcpServerDefinitionProvider` requires a recent VS Code
-  // (stabilised in 1.102). Feature-detect to avoid breaking on older editors.
-  const lm = vscode.lm as unknown as {
-    registerMcpServerDefinitionProvider?: (
-      id: string,
-      provider: {
-        onDidChangeMcpServerDefinitions?: vscode.Event<void>;
-        provideMcpServerDefinitions: () => Thenable<unknown[]> | unknown[];
-        resolveMcpServerDefinition?: (s: unknown) => Thenable<unknown> | unknown;
-      },
-    ) => vscode.Disposable;
-  };
-  const McpHttpServerDefinition = (vscode as unknown as {
-    McpHttpServerDefinition?: new (label: string, uri: vscode.Uri, headers?: Record<string, string>) => unknown;
-  }).McpHttpServerDefinition;
-
-  if (!lm.registerMcpServerDefinitionProvider || !McpHttpServerDefinition) {
-    return; // Running in a VS Code that doesn't support programmatic MCP yet.
-  }
-
-  const disposable = lm.registerMcpServerDefinitionProvider("volary", {
-    onDidChangeMcpServerDefinitions: change.event,
-    provideMcpServerDefinitions: async () => {
-      const token = await context.secrets.get(TOKEN_KEY);
-      const agentUrl = context.globalState.get<string>(AGENT_URL_KEY);
-      if (!token || !agentUrl) return [];
-      return [
-        new McpHttpServerDefinition("Volary", vscode.Uri.parse(`${agentUrl}/v0/mcp`), {
-          Authorization: `Bearer ${token}`,
-        }),
-      ];
-    },
-  });
-  context.subscriptions.push(disposable);
 }
 
 export function deactivate(): void {}

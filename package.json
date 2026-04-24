@@ -1,7 +1,7 @@
 {
   "name": "volary",
   "displayName": "Volary",
-  "description": "Injects Volary memory into GitHub Copilot sessions via agent hooks.",
+  "description": "Installs the Volary agent plugin into GitHub Copilot — adds memory, MCP tools, and transcript upload.",
   "version": "0.0.1",
   "publisher": "volary-ai",
   "engines": {
@@ -40,12 +40,6 @@
     "virtualWorkspaces": true
   },
   "contributes": {
-    "mcpServerDefinitionProviders": [
-      {
-        "id": "volary",
-        "label": "Volary"
-      }
-    ],
     "commands": [
       {
         "command": "volary.connect",
@@ -61,11 +55,11 @@
       },
       {
         "command": "volary.installHook",
-        "title": "Volary: Reinstall Copilot Hook"
+        "title": "Volary: Reinstall Plugin"
       },
       {
         "command": "volary.uninstallHook",
-        "title": "Volary: Disconnect / Uninstall Hook"
+        "title": "Volary: Disconnect / Uninstall Plugin"
       },
       {
         "command": "volary.showLogs",
