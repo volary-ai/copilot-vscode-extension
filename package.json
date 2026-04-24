@@ -2,7 +2,7 @@
   "name": "volary",
   "displayName": "Volary",
   "description": "Installs the Volary agent plugin into GitHub Copilot — adds memory, MCP tools, and transcript upload.",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "publisher": "Volary",
   "engines": {
     "vscode": "^1.102.0"
