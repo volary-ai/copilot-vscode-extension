@@ -3,7 +3,7 @@
   "displayName": "Volary",
   "description": "Installs the Volary agent plugin into GitHub Copilot — adds memory, MCP tools, and transcript upload.",
   "version": "0.0.1",
-  "publisher": "volary-ai",
+  "publisher": "Volary",
   "engines": {
     "vscode": "^1.102.0"
   },
@@ -69,7 +69,8 @@
   },
   "scripts": {
     "compile": "tsc -p ./",
-    "package": "npx --yes @vscode/vsce package --out volary.vsix"
+    "package": "npx --yes @vscode/vsce package --out volary.vsix",
+    "login": "npx --yes @vscode/vsce login Volary"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
