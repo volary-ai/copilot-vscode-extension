@@ -151,35 +151,6 @@ async function uninstall(context: vscode.ExtensionContext): Promise<void> {
   vscode.window.showInformationMessage("Volary disconnected.");
 }
 
-// One-time cleanup of files left behind by the pre-plugin hook-file design.
-function migrateLegacyFiles(): void {
-  const legacy = [
-    path.join(os.homedir(), ".copilot", "hooks", "volary.json"),
-    path.join(os.homedir(), ".volary", "scripts", "copilot-stop.sh"),
-    path.join(os.homedir(), ".volary", "scripts", "copilot-stop.ps1"),
-  ];
-  for (const p of legacy) {
-    if (fs.existsSync(p)) {
-      try {
-        fs.unlinkSync(p);
-        log(`migrated: removed legacy ${p}`);
-      } catch {
-        /* ignore */
-      }
-    }
-  }
-  for (const d of [
-    path.join(os.homedir(), ".volary", "scripts"),
-    path.join(os.homedir(), ".volary"),
-  ]) {
-    try {
-      fs.rmdirSync(d);
-    } catch {
-      /* not empty or missing — fine */
-    }
-  }
-}
-
 async function promptForAgentUrl(context: vscode.ExtensionContext): Promise<string | undefined> {
   const existing = context.globalState.get<string>(AGENT_URL_KEY) ?? "";
   const url = await vscode.window.showInputBox({
@@ -265,8 +236,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   output = vscode.window.createOutputChannel("Volary");
   context.subscriptions.push(output);
   log(`activating Volary v${context.extension.packageJSON.version} on ${process.platform}`);
-
-  migrateLegacyFiles();
 
   const seeded = await seedFromEnvIfPresent(context);
   if (seeded) log("seeded credentials from VOLARY_TOKEN / VOLARY_AGENT_URL env");
