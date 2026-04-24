@@ -183,8 +183,8 @@ function migrateLegacyFiles(): void {
 async function promptForAgentUrl(context: vscode.ExtensionContext): Promise<string | undefined> {
   const existing = context.globalState.get<string>(AGENT_URL_KEY) ?? "";
   const url = await vscode.window.showInputBox({
-    title: "Volary agent URL",
-    prompt: "e.g. https://api.volary.ai/v0/orgs/<org>/agents/<agent>",
+    title: "Volary agent base URL",
+    prompt: "You can find this on your agent's page on the Volary dashboard (https://volary.ai/orgs/<org>/agents/<agent>)",
     value: existing,
     ignoreFocusOut: true,
     validateInput: (v) => {
@@ -202,8 +202,8 @@ async function promptForAgentUrl(context: vscode.ExtensionContext): Promise<stri
 
 async function promptForToken(context: vscode.ExtensionContext): Promise<string | undefined> {
   const token = await vscode.window.showInputBox({
-    title: "Volary agent token",
-    prompt: "Paste the agent token from the Volary UI",
+    title: "Volary agent access token",
+    prompt: "You can find this on your agent's page on the Volary dashboard (https://volary.ai/orgs/<org>/agents/<agent>).",
     password: true,
     ignoreFocusOut: true,
     validateInput: (v) => (v.trim().length > 10 ? null : "Token looks too short"),
